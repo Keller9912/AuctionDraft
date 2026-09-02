@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Team board — Auction Draft Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header id="topbar" class="topbar"></header>
+
+<main>
+  <div class="page-head">
+    <h1>Team board</h1>
+    <p>Budget and roster status for every team. Click a team name to see who they've drafted.</p>
+  </div>
+
+  <div id="setup-mount"></div>
+
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead>
+        <tr>
+          <th>Team</th>
+          <th class="right">Starting</th>
+          <th class="right">Spent</th>
+          <th class="right">Remaining</th>
+          <th class="right">Max bid</th>
+          <th class="right">Drafted</th>
+          <th class="right">Spots left</th>
+        </tr>
+      </thead>
+      <tbody id="teams-body">
+        <tr><td colspan="7" class="empty-state">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="roster-panel" id="roster-panel">
+    <div class="roster-panel-head">
+      <h2 id="roster-panel-title">Team</h2>
+      <button type="button" id="roster-close">Close</button>
+    </div>
+    <div class="table-wrap" style="border:none;">
+      <table class="ledger">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Pos</th>
+            <th>NFL team</th>
+            <th class="right">Amount</th>
+          </tr>
+        </thead>
+        <tbody id="roster-body"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="app.js"></script>
+<script>
+renderNav("teams");
+renderSetupNoteIfNeeded(document.getElementById("setup-mount"));
+
+const teamsBody = document.getElementById("teams-body");
+const panel = document.getElementById("roster-panel");
+const panelTitle = document.getElementById("roster-panel-title");
+const panelBody = document.getElementById("roster-body");
+let teamsData = [];
+
+init();
+
+async function init() {
+  if (!isConfigured()) {
+    teamsBody.innerHTML = `<tr><td colspan="7" class="empty-state">Connect the Google Sheet to see the team board.</td></tr>`;
+    return;
+  }
+  try {
+    const board = await fetchBoardData();
+    teamsData = board.teams || [];
+    render();
+  } catch (err) {
+    teamsBody.innerHTML = `<tr><td colspan="7" class="empty-state">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function render() {
+  if (!teamsData.length) {
+    teamsBody.innerHTML = `<tr><td colspan="7" class="empty-state">No teams yet — add team names to the Teams tab in the Sheet.</td></tr>`;
+    return;
+  }
+  teamsBody.innerHTML = teamsData
+    .map(
+      (t) => `
+    <tr>
+      <td><button type="button" class="team-name-btn" data-team="${escapeHtml(t.name)}">${escapeHtml(t.name)}</button></td>
+      <td class="right money">${money(t.starting)}</td>
+      <td class="right money">${money(t.spent)}</td>
+      <td class="right money">${money(t.remaining)}</td>
+      <td class="right money">${money(t.maxRemaining)}</td>
+      <td class="right">${t.drafted}</td>
+      <td class="right">${t.rosterRemaining}</td>
+    </tr>`
+    )
+    .join("");
+
+  teamsBody.querySelectorAll(".team-name-btn").forEach((btn) => {
+    btn.addEventListener("click", () => showRoster(btn.dataset.team));
+  });
+}
+
+function showRoster(teamName) {
+  const team = teamsData.find((t) => t.name === teamName);
+  if (!team) return;
+  panelTitle.textContent = teamName + "'s roster";
+  if (!team.picks || !team.picks.length) {
+    panelBody.innerHTML = `<tr><td colspan="4" class="empty-state">No players drafted yet.</td></tr>`;
+  } else {
+    const sorted = [...team.picks].sort((a, b) => b.amount - a.amount);
+    panelBody.innerHTML = sorted
+      .map(
+        (p) => `
+      <tr>
+        <td>${escapeHtml(p.playerName)}</td>
+        <td>${escapeHtml(p.position)}</td>
+        <td>${escapeHtml(p.playerTeam)}</td>
+        <td class="right money">${money(p.amount)}</td>
+      </tr>`
+      )
+      .join("");
+  }
+  panel.classList.add("open");
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.getElementById("roster-close").addEventListener("click", () => {
+  panel.classList.remove("open");
+});
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+</script>
+</body>
+</html>

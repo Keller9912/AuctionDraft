@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Auction log — Auction Draft Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header id="topbar" class="topbar"></header>
+
+<main>
+  <div class="page-head">
+    <h1>Auction log</h1>
+    <p>Every pick logged so far, most recent first. Refreshes each time you open this page.</p>
+  </div>
+
+  <div id="setup-mount"></div>
+
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Player</th>
+          <th>Pos</th>
+          <th>NFL team</th>
+          <th>Drafted by</th>
+          <th class="right">Amount</th>
+        </tr>
+      </thead>
+      <tbody id="log-body">
+        <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script src="app.js"></script>
+<script>
+renderNav("log");
+renderSetupNoteIfNeeded(document.getElementById("setup-mount"));
+
+const body = document.getElementById("log-body");
+
+init();
+
+async function init() {
+  if (!isConfigured()) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">Connect the Google Sheet to see the log.</td></tr>`;
+    return;
+  }
+  try {
+    const board = await fetchBoardData();
+    render(board.log || []);
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function render(log) {
+  if (!log.length) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">No picks logged yet — the first one will show up here.</td></tr>`;
+    return;
+  }
+  const sorted = [...log].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  body.innerHTML = sorted
+    .map(
+      (r) => `
+    <tr>
+      <td>${formatTime(r.timestamp)}</td>
+      <td>${escapeHtml(r.playerName)}</td>
+      <td>${escapeHtml(r.position)}</td>
+      <td>${escapeHtml(r.playerTeam)}</td>
+      <td>${escapeHtml(r.teamDrafted)}</td>
+      <td class="right money">${money(r.amount)}</td>
+    </tr>`
+    )
+    .join("");
+}
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  });
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+</script>
+</body>
+</html>

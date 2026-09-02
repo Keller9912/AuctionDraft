@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Submit pick — Auction Draft Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header id="topbar" class="topbar"></header>
+
+<main>
+  <div class="page-head">
+    <h1>Submit a pick</h1>
+    <p>Log a player as they're drafted. Once submitted, they're removed from this list for everyone.</p>
+  </div>
+
+  <div id="setup-mount"></div>
+
+  <form class="pick-form" id="pick-form" autocomplete="off">
+    <div class="field full">
+      <label for="player-search">Player</label>
+      <input type="text" id="player-search" placeholder="Start typing a name…" />
+      <input type="hidden" id="player-id" />
+      <div class="combo-list" id="player-list"></div>
+    </div>
+
+    <div class="field">
+      <label for="team-select">Drafted by</label>
+      <select id="team-select">
+        <option value="">Loading teams…</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="amount-input">Amount ($)</label>
+      <input type="number" id="amount-input" min="1" step="1" placeholder="e.g. 24" />
+    </div>
+
+    <div class="submit-row">
+      <button type="submit" class="primary" id="submit-btn" disabled>Log pick</button>
+      <span class="status-msg" id="status-msg"></span>
+    </div>
+  </form>
+</main>
+
+<script src="app.js"></script>
+<script>
+renderNav("submit");
+renderSetupNoteIfNeeded(document.getElementById("setup-mount"));
+
+let allPlayers = [];
+let draftedIds = new Set();
+let selectedPlayer = null;
+let highlightIndex = -1;
+
+const searchInput = document.getElementById("player-search");
+const hiddenId = document.getElementById("player-id");
+const listEl = document.getElementById("player-list");
+const teamSelect = document.getElementById("team-select");
+const amountInput = document.getElementById("amount-input");
+const submitBtn = document.getElementById("submit-btn");
+const statusMsg = document.getElementById("status-msg");
+const form = document.getElementById("pick-form");
+
+init();
+
+async function init() {
+  if (!isConfigured()) {
+    teamSelect.innerHTML = `<option value="">Connect the sheet first</option>`;
+    return;
+  }
+  try {
+    const [players, board] = await Promise.all([loadSleeperPlayers(), fetchBoardData()]);
+    allPlayers = players;
+    draftedIds = new Set((board.draftedIds || []).map(String));
+    populateTeams(board.teams);
+    updatePlayerOptions("");
+    updateSubmitEnabled();
+  } catch (err) {
+    setStatus(err.message, "err");
+  }
+}
+
+function populateTeams(teams) {
+  if (!teams || !teams.length) {
+    teamSelect.innerHTML = `<option value="">No teams found — add names to the Teams tab</option>`;
+    return;
+  }
+  teamSelect.innerHTML =
+    `<option value="">Select a team…</option>` +
+    teams.map((t) => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`).join("");
+}
+
+function availablePlayers() {
+  return allPlayers.filter((p) => !draftedIds.has(p.id));
+}
+
+function updatePlayerOptions(query) {
+  const q = query.trim().toLowerCase();
+  const pool = availablePlayers();
+  const matches = q
+    ? pool.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 40)
+    : pool.slice(0, 40);
+
+  highlightIndex = -1;
+  if (!matches.length) {
+    listEl.innerHTML = `<div class="empty-state">No available players match "${escapeHtml(query)}"</div>`;
+    listEl.classList.add("open");
+    return;
+  }
+
+  listEl.innerHTML = matches
+    .map(
+      (p, i) => `
+      <button type="button" data-id="${p.id}" data-index="${i}">
+        <span>${escapeHtml(p.name)}</span>
+        <span class="meta">${p.position} · ${p.team}</span>
+      </button>`
+    )
+    .join("");
+  listEl.classList.add("open");
+
+  listEl.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => choosePlayer(btn.dataset.id));
+  });
+}
+
+function choosePlayer(id) {
+  const p = allPlayers.find((pl) => pl.id === id);
+  if (!p) return;
+  selectedPlayer = p;
+  hiddenId.value = p.id;
+  searchInput.value = p.name + " — " + p.position + " · " + p.team;
+  listEl.classList.remove("open");
+  updateSubmitEnabled();
+}
+
+searchInput.addEventListener("input", () => {
+  selectedPlayer = null;
+  hiddenId.value = "";
+  updatePlayerOptions(searchInput.value);
+  updateSubmitEnabled();
+});
+
+searchInput.addEventListener("focus", () => updatePlayerOptions(searchInput.value));
+
+searchInput.addEventListener("keydown", (e) => {
+  const items = Array.from(listEl.querySelectorAll("button"));
+  if (!items.length) return;
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    highlightIndex = Math.min(highlightIndex + 1, items.length - 1);
+    setHighlight(items);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    highlightIndex = Math.max(highlightIndex - 1, 0);
+    setHighlight(items);
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    if (highlightIndex >= 0) items[highlightIndex].click();
+  } else if (e.key === "Escape") {
+    listEl.classList.remove("open");
+  }
+});
+
+function setHighlight(items) {
+  items.forEach((it, i) => it.classList.toggle("hi", i === highlightIndex));
+  if (items[highlightIndex]) items[highlightIndex].scrollIntoView({ block: "nearest" });
+}
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".field")) listEl.classList.remove("open");
+});
+
+teamSelect.addEventListener("change", updateSubmitEnabled);
+amountInput.addEventListener("input", updateSubmitEnabled);
+
+function updateSubmitEnabled() {
+  const ok = selectedPlayer && teamSelect.value && Number(amountInput.value) > 0 && isConfigured();
+  submitBtn.disabled = !ok;
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!selectedPlayer || !teamSelect.value || !(Number(amountInput.value) > 0)) return;
+
+  submitBtn.disabled = true;
+  setStatus("Logging pick…", "");
+
+  try {
+    const result = await submitPick({
+      playerId: selectedPlayer.id,
+      playerName: selectedPlayer.name,
+      playerTeam: selectedPlayer.team,
+      position: selectedPlayer.position,
+      teamDrafted: teamSelect.value,
+      amount: Number(amountInput.value)
+    });
+
+    draftedIds = new Set((result.data.draftedIds || []).map(String));
+    setStatus(`Logged ${selectedPlayer.name} to ${teamSelect.value} for ${money(amountInput.value)}.`, "ok");
+
+    selectedPlayer = null;
+    hiddenId.value = "";
+    searchInput.value = "";
+    amountInput.value = "";
+    teamSelect.value = "";
+    updatePlayerOptions("");
+  } catch (err) {
+    setStatus(err.message, "err");
+  } finally {
+    updateSubmitEnabled();
+  }
+});
+
+function setStatus(text, cls) {
+  statusMsg.textContent = text;
+  statusMsg.className = "status-msg" + (cls ? " " + cls : "");
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+</script>
+</body>
+</html>
