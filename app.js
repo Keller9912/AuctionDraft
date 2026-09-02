@@ -3,7 +3,7 @@
 // See README.md for the one-time Google Sheet + Apps Script setup steps.
 // ---------------------------------------------------------------------------
 const CONFIG = {
-  APPS_SCRIPT_URL: "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE",
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxdHMlYzUT4C-Ai2Jer3_F3jL1SkTYtHcG0caNDDr1sSuBZOHBnWdUVIXjAbLeC_kxC4A/exec",
   STARTING_BUDGET: 250,
   ROSTER_SIZE: 15,
   FANTASY_POSITIONS: ["QB", "RB", "WR", "TE", "K", "DEF"],
